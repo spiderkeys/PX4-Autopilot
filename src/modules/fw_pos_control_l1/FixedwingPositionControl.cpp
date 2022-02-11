@@ -1146,6 +1146,37 @@ FixedwingPositionControl::handle_setpoint_type(const uint8_t setpoint_type, cons
 	return position_sp_type;
 }
 
+Vector2f FixedwingPositionControl::navigateWaypoints(const Vector2f &waypoint_A, const Vector2f &waypoint_B,
+		const Vector2f &vehicle_pos)
+{
+	Vector2f unit_path_tangent;
+	// similar to logic found in ECL_L1_Pos_Controller method of same name
+	// BUT no arbitrary max approach angle, approach entirely determined by generated
+	// bearing vectors
+
+	Vector2f vector_A_to_B = waypoint_A - waypoint_B;
+	Vector2f vector_A_to_vehicle = waypoint_A - vehicle_pos;
+
+	if (vector_A_to_B.norm() < FLT_EPSILON) {
+		// the waypoints are on top of each other and should be considered as a
+		// single waypoint, fly directly to it
+		unit_path_tangent = -vector_A_to_vehicle.normalized();
+
+	} else if (vector_A_to_B.dot(vector_A_to_vehicle) < 0.0f) {
+		// we are in front of waypoint A, fly directly to it until the bearing generated
+		// to the line segement between A and B is shallower than that from the
+		// bearing to the first waypoint (A).
+
+		unit_path_tangent = -vector_A_to_vehicle.normalized();
+
+	} else {
+		// track the line segment between A and B
+		unit_path_tangent = vector_A_to_B.normalized();
+	}
+
+	return unit_path_tangent;
+} // navigateWaypoints
+
 vehicle_local_path_setpoint_s
 FixedwingPositionControl::control_auto_position(const hrt_abstime &now, const float dt, const Vector2d &curr_pos,
 		const Vector2f &ground_speed, const position_setpoint_s &pos_sp_prev, const position_setpoint_s &pos_sp_curr)
@@ -1210,22 +1241,20 @@ FixedwingPositionControl::control_auto_position(const hrt_abstime &now, const fl
 	Vector2f curr_pos_local{_local_pos.x, _local_pos.y};
 	Vector2f curr_wp_local = _global_local_proj_ref.project(pos_sp_curr.lat, pos_sp_curr.lon);
 	Vector2f prev_wp_local = _global_local_proj_ref.project(prev_wp(0), prev_wp(1));
-	float target_airspeed = get_auto_airspeed_setpoint(now, pos_sp_curr.cruising_speed, ground_speed, dt);
 
-	float curvature = (PX4_ISFINITE(_pos_sp_triplet.current.loiter_radius)
-			   && !(pos_sp_curr.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF)) ? 1 / _pos_sp_triplet.current.loiter_radius :
-			  0.0f;
+	float target_airspeed = get_auto_airspeed_setpoint(now, pos_sp_curr.cruising_speed, ground_speed, dt);
+	Vector2f path_tangent = navigateWaypoints(prev_wp_local, curr_wp_local, curr_pos_local);
 
 	vehicle_local_path_setpoint_s setpoint;
 	prev_wp_local.copyTo(setpoint.prev_wp);
 	setpoint.x = curr_wp_local(0);
 	setpoint.y = curr_wp_local(1);
 	setpoint.z = position_sp_alt;
-	setpoint.vx = pos_sp_curr.vx;
-	setpoint.vy = pos_sp_curr.vy;
+	setpoint.vx = path_tangent(0);
+	setpoint.vy = path_tangent(1);
 	setpoint.vz = NAN;
 	setpoint.airspeed = target_airspeed;
-	setpoint.curvature = curvature;
+	setpoint.curvature = 0.0f;
 
 	return setpoint;
 }

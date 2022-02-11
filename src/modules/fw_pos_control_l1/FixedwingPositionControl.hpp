@@ -344,6 +344,7 @@ private:
 	 */
 	void		update_desired_altitude(float dt);
 	uint8_t		handle_setpoint_type(const uint8_t setpoint_type, const position_setpoint_s &pos_sp_curr);
+	Vector2f	navigateWaypoints(const Vector2f &waypoint_A, const Vector2f &waypoint_B, const Vector2f &vehicle_pos);
 	void		control_auto(const hrt_abstime &now, const Vector2d &curr_pos, const Vector2f &ground_speed,
 				     const position_setpoint_s &pos_sp_prev,
 				     const position_setpoint_s &pos_sp_curr, const position_setpoint_s &pos_sp_next, vehicle_local_path_setpoint_s &path_sp);
